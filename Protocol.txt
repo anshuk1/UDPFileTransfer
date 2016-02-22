@@ -1,0 +1,81 @@
+
+General Overview
+
+The client accepts the name of file, address of server and port number of server on the command line. The client sends the file name to the server which provides the client with the number of chunks this requested file will be broken into. If the server encounters any problems in calculating the number of chunks, it sends an appropriate error message to the client. If the server does not encounter any problems with the requested file, the client can start making requests for each chunk. 
+
+It is assumed that during requests for chunks, no other process will modify the file on the server filesystem. The requested file must be either in the same directory as the server or a sub-directory under it. Absolute paths or relative paths beginning with a .. (e.g. /somedir/somefile or ../somedir/somefile) will not be considered valid requests.
+
+The client prints the received chunks to standard output (stdout) while all non-data strings are printed to the standard error console (stderr). For all requests, the client has to be invoked with the output re-directed to a file.
+
+The client uses a socket timeout of SOCK_TIMEOUT seconds (defined in common.h) to make the read call non-blocking. If a timeout is encountered or garbage is received, the client will repeat the request MAX_TRIES (defined in common.h) times.
+
+There are 3 types of messages that are transferred between clients and server.
+
+1.	Request Message (REQMSG)
+2.	Data Message (DATMSG)
+3.	Control Message (CTLMSG)
+
+The server accepts only REQMSG and based upon the request, sends either CTLMSG or DATMSG. The client only accepts CTLMSG and DATMSG. REQMSG are fixed length while the other two are variable length messages.
+
+Request Message
+
+REQMSGs are 42 byte messages that the server receives and acts upon. The format of the message is as follows :
+
+MSGTYPE, 1	FILENAME, 16	CHUNK, 5	ADDRESS, 15	PORT, 5
+
+MSGTYPE field contains 1 byte message type identifier. For REQMSG, this field contains R.
+
+FILENAME field contains the name of the requested file. The length of the filename can be at most 16 bytes.
+
+CHUNK field contains the requested chunk number from file FILENAME. If this field contains a 0, the server sends a CTLMSG containing the total number of chunks in the file.  All client requests begin with a request for the number of chunks, e.g. CHUNK = 0, and proceed to requests chunks 1 through the total number of chunks in the file as returned by the server.
+
+ADDRESS field contains the IP address of the client.
+
+PORT field contains the port number on which the client is listening for messages from the server.
+
+
+Control Message
+
+The server can respond to a REQMSG by sending either a DATMSG or a CTLMSG. CTLMSGs are used to send error strings, file information and all non-data messages to clients. They are variable width messages with a maximum width  of 30 bytes. The format of the CTLMSG is as follows:
+
+MSGTYPE, 1	CTLTYPE, 5	CTLMSG, 24
+
+MSGTYPE field contains a 1 byte message type identifier which is C for CTLMSG.
+
+CTLTYPE field contains a 5 byte string which acts as a message type identifier. Currently this field can be either CHNKS or ERROR. CTLMSG of type CHNKS is used to send the number of chunks of requested file. Message of type ERROR is used to send error information.
+
+CTLMSG is a variable length field which can be a maximum of 24 bytes. This field contains the control message sent by the server. If the type is CHNKS, this field contains the number of chunks. If the type is ERROR, this field contains the error message.
+
+The following error messages are currently sent by the server.
+
+UNAUTHORIZED REQUEST
+	Sent when the requested file is an absolute path or a relative path starting with “.”.
+BAD REQUEST FORMAT
+	Sent if the request message is not in the correct format.
+BAD CHUNK REQUEST
+	Sent if the requested chunk is less than 0.
+CANNOT STAT FILE
+	Sent if stat() fails on the requested file.
+FILE SIZE NULL
+	Sent is the file size is 0.
+TOO MANY CHUNKS
+	Sent if the number of chunks is too large to fit in CHUNK_LEN ( = 5).
+CHUNK OUT OF BOUND
+	Sent if the chunk number is larger than number of chunks.
+
+
+Data Message
+
+DATMSG are sent by the server to the client. These messages hold the chunks of file requested by the client. The messages are variable width with a maximum width of 1000 bytes. Their format is as follows:
+
+MSGTYPE, 1	CHUNK, 5	DATA, 994
+
+MSGTYPE field is the message type identifier which contains a D for DATMSG.
+
+CHUNK field is a 5 byte fixed length field which holds the chunk number that is being sent. 
+
+DATA is a variable width field with a maximum length of 994 bytes. This field contains the data requested by the server. The message is sent to the address and port specified in the REQMSG. 
+
+
+Since the CHUNK field is 5 bytes and the maximum data size is 994 bytes, the maximum size of files that can be transferred is 99999 * 994 bytes = 94.8 MB approx. This is more than adequate for testing purposes as the transmission time for files of size 10 MB is consistently over a minute.
+
